@@ -1,0 +1,18 @@
+--new
+CREATE OR REPLACE FUNCTION preftz.create_receipt_classifications --generate renamed to
+CREATE OR REPLACE FUNCTION preftz.calculate_receipt_classifications --generate
+CREATE OR REPLACE FUNCTION preftz.classify_receipts_v2
+
+CREATE OR REPLACE PROCEDURE preftz.calculate_derivative_duty_liability_v2
+CREATE OR REPLACE PROCEDURE preftz.calculate_derivative_quantity_v2
+CREATE OR REPLACE PROCEDURE preftz.calculate_duty_liability_v2
+CREATE OR REPLACE FUNCTION preftz.filter_additional_tariffs_struc_v2
+CREATE OR REPLACE FUNCTION preftz.filter_section232_tariffs_struc_v2
+CREATE OR REPLACE FUNCTION preftz.get_added_derivative_tariffs_struc_v2
+CREATE OR REPLACE FUNCTION preftz.get_added_tariffs_struc_v2
+CREATE OR REPLACE FUNCTION preftz.get_all_additional_tariffs_string_v2
+CREATE OR REPLACE FUNCTION preftz.get_all_additional_tariffs_struc_v2
+
+
+CREATE TABLE preftz.receipt_classifications_v2 
+
