@@ -86,6 +86,7 @@ BEGIN
                 ,trc.override_tariff
                 ,trc.unit_value
                 ,trc.privileged_date
+                ,trc.override_hts
                  FROM tmp_receipt_classification_data trc
                  --where receiptid in (210455,210454,210456)
                 -- ORDER BY trc.receiptid,trc.id
@@ -131,6 +132,10 @@ BEGIN
               	
                   --RTJ 01/17/2023	
                   v_unit_value = crs.unit_value;	
+
+                  IF (crs.override_hts IS NOT TRUE)-- USE this section if not using an old HTS
+                  THEN 
+
                   v_bounds_hts = preftz.get_bounds_hts(crs.part_number, v_unit_value);	
                   	
                   IF v_bounds_hts = 'MISSINGHTS' THEN	
@@ -173,7 +178,8 @@ BEGIN
                           v_special_program = TRIM(SUBSTR(v_classification,11,2));	
                       END IF;	
                   END IF;  --bounds hts check	
-                  --RTJ 01/17/2023	
+
+                END IF; --IF (crs.override_hts IS NOT TRUE)-- USE this section if not using an old HTS
                   	
               END IF;  --base hts	
               	

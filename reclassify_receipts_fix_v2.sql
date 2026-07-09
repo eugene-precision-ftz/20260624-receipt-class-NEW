@@ -119,6 +119,14 @@ BEGIN
             ,rs.receiptid
             );
 
+            IF rs.override_hts IS NOT NULL THEN
+                UPDATE tmp_receipt_classification_data
+                   SET harmonized_tariff_schedule_number = rs.override_hts,
+                       override_hts = true
+                 WHERE receiptid = rs.receiptid
+                   AND tariff_type = 'BASE';
+            END IF;
+
             v_result_2 := preftz.generate_tmp_receipt_classification_work();
 
     if (v_result_1 = 'PASS' AND v_result_2 = 'PASS')
@@ -209,7 +217,7 @@ BEGIN
             INSERT INTO preftz.reclassified_receipts (receiptid, classify_date, comment, modified_time)
             VALUES (rs.receiptid, rs.classify_date, v_result_1 || ' no split', v_now);
             RAISE NOTICE '    reclassified: %', rs.receiptid;
-            
+
            ELSE
                 INSERT INTO preftz.reclassified_receipts 
                     (receiptid, classify_date, comment, modified_time)

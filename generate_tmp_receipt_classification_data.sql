@@ -120,7 +120,9 @@ BEGIN
         is_agricultural_or_industrial BOOLEAN NULL,
         percent_us_content            NUMERIC DEFAULT NULL,
 
-        receipt_value                 DOUBLE PRECISION NULL
+        receipt_value                 DOUBLE PRECISION NULL,
+        override_hts                  BOOLEAN NULL
+
     ) 
     ON COMMIT PRESERVE ROWS
     ;
@@ -270,22 +272,7 @@ BEGIN
         ;
       END IF;
 
-
-
-    /* 
-     
-    --this can be used instead of loop if loop will not have any new logic added in future. 
-    --But loop is used to make it more readable and easy to maintain. 
-
-      UPDATE tmp_receipt_classification_data trc
-      SET privileged_date = t.privileged_date
-      FROM preftz.transfer_ztz_archive t
-      WHERE t.transfer_itemid = (
-          SELECT x.get_transfer_itemid_from_ztz_receiptid
-          FROM preftz.get_transfer_itemid_from_ztz_receiptid(trc.receiptid) x
-      )
-      AND t.privileged_date IS NOT NULL;
-      */
+-----------------------------------------------------------------------------------------------------------   
 
               FOR crs IN 
                  SELECT trc.receiptid, trc.part_number, trc.privileged_date
@@ -294,6 +281,28 @@ BEGIN
                  ORDER BY trc.receiptid, trc.part_number, trc.privileged_date
                  LOOP
                     v_privileged_date := crs.privileged_date;
+
+                    v_301_exclusion := NULL;
+                    v_232_exclusion := NULL;
+                    v_chapter98_override := NULL;
+                    v_used_for_production_or_repair := FALSE;
+                    v_exclusion_tariffs := '{}'::VARCHAR(10)[];
+                    
+                    v_aluminum_percentage := NULL;
+                    v_steel_percentage := NULL;
+                    v_copper_percentage := NULL;
+                    
+                    v_unit_net_weight := NULL;
+                    v_steel_content_weight := NULL;
+                    v_aluminum_content_weight := NULL;
+                    v_copper_content_weight := NULL;
+                    
+                    v_moto_exclusion := NULL;
+                    v_is_usmca_special_treatment := FALSE;
+                    v_is_agricultural_or_industrial := FALSE;
+                    v_percent_us_content := NULL;
+                    
+                    v_receipt_value := NULL;                    
 
                     --this will be > 0 ONLY if we have privileged date provided in transfer item file for this receipt. 
                     SELECT 
@@ -308,7 +317,7 @@ BEGIN
                     AND t.privileged_date IS NOT NULL;
                     
                     
-                    IF (v_add_hts_count > 0 ) --transfer archive has privileged date for this receipt
+                    IF (v_add_hts_count > 0 AND p_classify_date IS NULL) --transfer archive has privileged date for this receipt
                     THEN
                     -- get a privileged date provided in transfer item file
                           SELECT  t.privileged_date 
@@ -405,6 +414,9 @@ BEGIN
                      FROM preftz.derivative_parts_content
                      WHERE part_number = crs.part_number
                      AND v_privileged_date BETWEEN start_date AND end_date;
+                     --AND date '2026-07-01' BETWEEN start_date AND end_date;
+                     
+
 
                      UPDATE tmp_receipt_classification_data
                      SET
@@ -569,14 +581,14 @@ RAISE NOTICE 'tmp_receipt_classification_work receipts: %',
 
     -- Log finish
     INSERT INTO preftz.system_log(procedure_name, log_message, details)
-    VALUES ('create_receipt_classifications' , 'ended: '|| v_result, now());
+    VALUES ('generate_tmp_receipt_classification_data', 'ended: ' || v_result, now());
 
     RETURN v_result;
 
 EXCEPTION WHEN OTHERS THEN
     
     INSERT INTO preftz.system_log(procedure_name, log_message, details)
-    VALUES ('create_receipt_classifications', 'ERROR: ' || SQLERRM, now());
+    VALUES ('generate_tmp_receipt_classification_data', 'ERROR: ' || SQLERRM, now());
     RAISE;
 END;
 $function$;

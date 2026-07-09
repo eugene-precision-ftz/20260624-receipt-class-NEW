@@ -72,7 +72,7 @@ BEGIN
                    from tmp_receipt_classification_data
                    where percent_us_content is not null
                    group by receiptid, percent_us_content
-                   )
+                   ) t1
                 UNION
                 SELECT receiptid, '99038221' as tariff_number,  -- US value
                     CASE WHEN percent_us_value >= 0.4 THEN 0.4::NUMERIC ELSE percent_us_value::NUMERIC END AS usmca_value
@@ -82,7 +82,7 @@ BEGIN
                 from tmp_receipt_classification_data
                 where percent_us_content is not null
                 group by receiptid, percent_us_content
-                )
+                ) t2
             ) usv ON usv.receiptid = r.receiptid
             
                 AND usv.tariff_number = rc.harmonized_tariff_schedule_number   -- KK 06/10/2026 CSMS # 68855869

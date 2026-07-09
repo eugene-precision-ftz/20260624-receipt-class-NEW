@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS preftz.receipt_classifications_v2 (
 	unit_duty_liability float8 NULL,
 	CONSTRAINT receipt_classifications2_pkey PRIMARY KEY (receiptid, harmonized_tariff_schedule_number)
 );
-
 CREATE INDEX IF NOT EXISTS rc2_hts_number ON preftz.receipt_classifications_v2 USING btree (harmonized_tariff_schedule_number);
 CREATE INDEX IF NOT EXISTS rc2_receipt_id ON preftz.receipt_classifications_v2 USING btree (receiptid);-- PROCEDURE: preftz.calculate_derivative_duty_liability_v2(integer)
 
@@ -505,7 +504,7 @@ BEGIN
                    from tmp_receipt_classification_data
                    where percent_us_content is not null
                    group by receiptid, percent_us_content
-                   )
+                   ) t1
                 UNION
                 SELECT receiptid, '99038221' as tariff_number,  -- US value
                     CASE WHEN percent_us_value >= 0.4 THEN 0.4::NUMERIC ELSE percent_us_value::NUMERIC END AS usmca_value
@@ -515,7 +514,7 @@ BEGIN
                 from tmp_receipt_classification_data
                 where percent_us_content is not null
                 group by receiptid, percent_us_content
-                )
+                ) t2
             ) usv ON usv.receiptid = r.receiptid
             
                 AND usv.tariff_number = rc.harmonized_tariff_schedule_number   -- KK 06/10/2026 CSMS # 68855869
@@ -768,7 +767,9 @@ BEGIN
         is_agricultural_or_industrial BOOLEAN NULL,
         percent_us_content            NUMERIC DEFAULT NULL,
 
-        receipt_value                 DOUBLE PRECISION NULL
+        receipt_value                 DOUBLE PRECISION NULL,
+        override_hts                  BOOLEAN NULL
+
     ) 
     ON COMMIT PRESERVE ROWS
     ;
@@ -1405,7 +1406,7 @@ DECLARE
    v_classification    VARCHAR(12);	
    v_tariff_number     VARCHAR(10);	
    v_special_program   VARCHAR(2);	
-   v_zone_status       VARCHAR(1);	
+   v_zone_status       VARCHAR(1);
    v_base_hts          VARCHAR(10);
    v_bounds_hts        VARCHAR(10);
    v_unit_value        DOUBLE PRECISION;
@@ -1475,6 +1476,7 @@ BEGIN
                 ,trc.override_tariff
                 ,trc.unit_value
                 ,trc.privileged_date
+                ,trc.override_hts
                  FROM tmp_receipt_classification_data trc
                  --where receiptid in (210455,210454,210456)
                 -- ORDER BY trc.receiptid,trc.id
@@ -1520,6 +1522,10 @@ BEGIN
               	
                   --RTJ 01/17/2023	
                   v_unit_value = crs.unit_value;	
+
+                  IF (crs.override_hts IS NOT TRUE)-- USE this section if not using an old HTS
+                  THEN 
+
                   v_bounds_hts = preftz.get_bounds_hts(crs.part_number, v_unit_value);	
                   	
                   IF v_bounds_hts = 'MISSINGHTS' THEN	
@@ -1562,7 +1568,8 @@ BEGIN
                           v_special_program = TRIM(SUBSTR(v_classification,11,2));	
                       END IF;	
                   END IF;  --bounds hts check	
-                  --RTJ 01/17/2023	
+
+                END IF; --IF (crs.override_hts IS NOT TRUE)-- USE this section if not using an old HTS
                   	
               END IF;  --base hts	
               	
