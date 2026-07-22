@@ -142,6 +142,7 @@ BEGIN
         LEFT JOIN ztz_details ztzd ON ztzd.receiptid = r.receiptid
         WHERE r.zone_admission_no = p_admission_number
             AND pc.tariff_type <> 'SCRAP'
+            AND r.receiptid = 284598
         ORDER BY r.receiptid, CASE pc.tariff_type WHEN 'BASE' THEN 0 ELSE 9 END
   )
   LOOP	
@@ -154,7 +155,7 @@ BEGIN
       ELSE
           v_classify_date := p_classify_date;
       END IF;
-    
+
 
       IF crs.zone_status <> 'D'	
       THEN	
@@ -369,16 +370,16 @@ BEGIN
                   -- KK 08/20/2025 update quantity1_rate based on derivative percentage
                   -- This is not very efficient, need to refactor calls to these procs after hot-fix
                   -- order is IMPORTANT! calculate_derivative_quantity needs to be called before duty calculations
-                  IF LENGTH(v_added_tariffs) > 0 THEN	
-                      CALL preftz.calculate_derivative_quantity(crs.receiptid); 	
-                  END IF;
+                   IF LENGTH(v_added_tariffs) > 0 THEN	
+                       CALL preftz.calculate_derivative_quantity(crs.receiptid); 	
+                   END IF;
 
-                   CALL preftz.calculate_duty_liability(crs.receiptid);  --RTJ 07/12/2021	
+                    CALL preftz.calculate_duty_liability(crs.receiptid);  --RTJ 07/12/2021	
 	
-                  -- If Derivative of steel or aluminum recalculate BASE and derivative tariffs	
-                  IF LENGTH(v_added_tariffs) > 0 THEN	
-                      CALL preftz.calculate_derivative_duty_liability(crs.receiptid); 	
-                  END IF;	
+                   -- If Derivative of steel or aluminum recalculate BASE and derivative tariffs	
+                   IF LENGTH(v_added_tariffs) > 0 THEN	
+                       CALL preftz.calculate_derivative_duty_liability(crs.receiptid); 	
+                   END IF;	
               	
               END IF;  --receipt result	
               	

@@ -144,9 +144,10 @@ RAISE NOTICE 'tmp_receipt_classification_work receipts: %',
 
     -- Log finish
     INSERT INTO preftz.system_log(procedure_name, log_message, details)
-    VALUES ('classify_receipts_v2' , 'ended: '|| v_result, now());
+    VALUES ('classify_receipts_v2' , 'ended: ' || p_admission_number || ' ' || v_result, now());
 
     RETURN v_result;
+
 
 EXCEPTION WHEN OTHERS THEN
     

@@ -77,8 +77,9 @@ order by efs.zone_admission_no desc
 ;
 
 --select preftz.classify_receipts('26ANT01300');
+--perform  preftz.classify_receipts_v2(p_admission_number,null,null,true);
 
-select preftz.classify_receipts_v2('26BWGA0080',null,null,true);
+select preftz.classify_receipts_v2('2600000051',null,null,true);
 
 
 with r as  
@@ -105,20 +106,27 @@ t2.*
 from preftz.receipt_classifications_v2 t1
 join preftz.compare_receipt_classifications_to_v2(t1.receiptid) t2
 on t1.receiptid = t2.receiptid
---where t1.created_date > '2026-07-08'
+where t1.created_date > '2026-07-20'
 --where t1.receiptid =281351 --chest
 order by t2.receiptid,t2.harmonized_tariff_schedule_number, t2.field_name 
 
 select count(*) from preftz.receipt_classifications_v2 t1;
 
+1  !!! update delete receipt process  
+
+--trf 
+--1803
+--!!! 197805
+
 --anatolia
---233
+--2851
 
---chest 3549
+--chest 4805
 --issues !!!!!! 
---281348, 281351 281350 
+--281348, 281351 281350  
+--new 284598 !!!!!
 
---georgia 853
+--georgia 1018
 --ok
 
 select 
@@ -129,16 +137,22 @@ order by created_date desc;
 
 select * 
 from preftz.receipt_classifications_v2 t1
-where t1.receiptid  = 281348
+where t1.receiptid  = 284598
 order by created_date desc;
 
 select * 
 from preftz.receipt_classifications t1
-where t1.receiptid  = 281348;
+where t1.receiptid  = 284598;
 
 select r.privileged_date,r.receipt_date ,* 
 from preftz.receipts r
-where r.receiptid in (281348, 281351, 281350)
+where r.receiptid in (284598)
+
+select r.privileged_date,r.receipt_date ,* 
+FROM preftz.deleted_pre_receipts r 
+where r.receiptid in (197805)
+
+
 
 select preftz.get_transfer_itemid_from_ztz_receiptid(281348);
 select * from preftz.transfer_ztz_archive t  WHERE 
@@ -155,6 +169,12 @@ where efs.e214_date::text like '2026-07%'
 
 
 --$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+receiptid|harmonized_tariff_schedule_number|special_programs_indicator|unit_value|tariff_type|distinct_tariff_line_indicator|primary_tariff|quantity1_rate|quantity2_rate|unit_duty_liability|
+---------+---------------------------------+--------------------------+----------+-----------+------------------------------+--------------+--------------+--------------+-------------------+
+   284598|99038803                         |                          |       0.0|SECTION301 |                              |              |              |              |               1.61|
+   284598|99038190                         |                          |     2.576|SECTION232 |                              |              |     0.4953312|              |              1.288|
+   284598|7315110005                       |                          |     3.864|BASE       |                              |              |     0.7429968|              |                0.0|
 
 --select * from preftz.classify_receipts_v2('26BERR0020',null,10035);
 --select * from preftz.classify_receipts_v2('26BERR0020','2025-03-03');
@@ -174,7 +194,16 @@ select preftz.generate_tmp_receipt_classification_data(null,null,281348);
 select preftz.generate_tmp_receipt_classification_data(null,null,281312);
 
 select preftz.generate_tmp_receipt_classification_data(null,null,46865);--g
-select preftz.generate_tmp_receipt_classification_data(null,null,278132); --c
+
+select preftz.generate_tmp_receipt_classification_data(null,null,284598); --c
+
+
+SELECT preftz.validate_classification ('8413919099', null, 'CN', '2025-07-28');
+SELECT preftz.validate_classification ('8413919010', null, 'CN', '2025-07-28');
+
+
+SELECT * FROM preftz.part_classifications o	
+where part_number = '15MIS_C-WPI-0001'	
 
 
 
@@ -183,12 +212,6 @@ select preftz.generate_tmp_receipt_classification_work();
 select privileged_date,* from tmp_receipt_classification_data;
 --31
 select * from tmp_receipt_classification_work;
-
-receiptid|created_date           |harmonized_tariff_schedule_number|special_programs_indicator|unit_value|tariff_type|distinct_tariff_line_indicator|primary_tariff|quantity1_rate|quantity2_rate|unit_duty_liability|
----------+-----------------------+---------------------------------+--------------------------+----------+-----------+------------------------------+--------------+--------------+--------------+-------------------+
-   281348|2026-07-09 10:42:22.690|99038803                         |                          |       0.0|SECTION301 |                              |              |              |              |             3.6525|
-   281348|2026-07-09 10:42:22.690|99038190                         |                          |  14.53695|SECTION232 |                              |              |     1.9858608|              |           7.268475|
-   281348|2026-07-09 10:42:22.690|7315110005                       |                          |   0.07305|BASE       |                              |              |     0.0099792|              |                0.0|
 
 select preftz.create_receipt_classifications('23BWGA0101');
 select preftz.calculate_receipt_classifications();     
@@ -204,8 +227,50 @@ select preftz.classify_receipts_v2('26NB000136',null,null,true);
 
 
 
-select preftz.classify_receipts_v2(null,null,210455,true);
+select preftz.classify_receipts_v2(null,'2025-06-30',284598,true);
+select preftz.classify_receipts_v2(null,null,284598,true);
+
 select preftz.classify_receipts_v2('26ANT00864',null,null,true);
+
+select preftz.classify_receipts('26BWMI0069');
+--26BWMI0069
+558	     15MIS_C-DCH-0297	0.995	0.0	1900-01-01 00:00:01.000	2025-06-29 23:59:59.000	0.0
+13934	15MIS_C-DCH-0297	0.4	    0.0	2025-06-30 00:00:00.000	9999-12-31 23:59:59.000	0.0
+
+
+
+select 
+* 
+from tmp_receipt_classification_work
+where receiptid in (284598)
+order by harmonized_tariff_schedule_number ;
+
+284598	2026-07-22 10:40:46.123	99038803		0.0	SECTION301
+284598	2026-07-22 10:40:46.123	99038190		2.576	SECTION232
+284598	2026-07-22 10:40:46.123	7315110005		3.864	BASE
+
+select * 
+from preftz.receipt_classifications_v2 t1
+where t1.receiptid  = 284598
+order by created_date desc;
+
+
+select * 
+from preftz.receipt_classifications 
+where receiptid in (284598)
+order by harmonized_tariff_schedule_number ;
+
+
+--temp tables
+select * from tmp_receipt_classification_data
+--where receiptid = 210455;
+--31
+
+select * from tmp_receipt_classification_work
+where receiptid = 210455;
+--77
+
+
 
 select * 
 --delete 
@@ -229,8 +294,9 @@ on t1.receiptid = t2.receiptid
 
 --temp tables
 select * from tmp_receipt_classification_data
-where receiptid = 210455;
+--where receiptid = 210455;
 --31
+
 select * from tmp_receipt_classification_work
 where receiptid = 210455;
 --77
@@ -241,6 +307,7 @@ select count(*) from preftz.part_bounds
 select * from preftz.part_bounds
 
 select * FROM preftz.derivative_parts_content
+where part_number  = '15MIS_C-DCH-0297';
 select * FROM preftz.receipt_derivative_content rdc;
 select * from preftz.parts_extension; 
 select * FROM preftz.receipt_percentage_value ;
@@ -307,7 +374,7 @@ on t1.receiptid = t2.receiptid
  with target_receipts as (
     -- change this CTE to return the sub-set of receipts you want to compare
     select receiptid from preftz.receipts 
-    where receiptid in (281348)
+    where receiptid in (197805)
     --where receiptid in(   select receiptid from t1   )
 )
 , current_tariffs as (
@@ -481,7 +548,7 @@ where (cardinality(added_tariffs) > 0 or cardinality(removed_tariffs) > 0)
 with target_receipts as (
     -- change this CTE to return the sub-set of receipts you want to compare
     select receiptid from preftz.receipts 
-    where receiptid in (59022)
+    where receiptid in (284598)
     --where receiptid in(   select receiptid from t1   )
 ), current_tariffs as (
     select rc.receiptid, array_agg(rc.harmonized_tariff_schedule_number) as current_tariffs
