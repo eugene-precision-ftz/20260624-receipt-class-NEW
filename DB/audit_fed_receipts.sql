@@ -7,6 +7,8 @@ CREATE OR REPLACE PROCEDURE preftz.audit_fed_receipts(IN p_use_selected_receipts
 AS $BODY$ 	
  	
 --Change Log: 	
+-- EG 07/23/2026 do not reset e214 status for edited receipts if pre-receit was AUTHORIZED and AUTO CONCUR is set to AUTO_LINK_CONCUR
+-- EG 07/16/2026 Compare fed_receipts columns with all other tables to know if anything chaged during front end UPDATE 
 -- KK 07/03/2026 add USMCA special treatments, allow capture of percentage of value is US content.
 -- EG 07/06/2026 some issues fixed
 -- MH 07/02/2026 allow UN (Unknown) for country of cast	
@@ -459,7 +461,40 @@ BEGIN
      WHERE fr.receiptid = r.receiptid 	
        AND fr.fed_status = 'AUDITING'; 	
     GET DIAGNOSTICS v_update_count = ROW_COUNT;  --RTJ 05/05/2021 	
- 	
+
+-- EG 07/16/2026
+    INSERT INTO preftz.system_log (
+        procedure_name,
+        log_message
+    )
+    SELECT
+        'audit_fed_receipts',
+        'MARKED AS DUPLICATE: ' ||
+        COALESCE(
+            string_agg(
+                fr.receiptid::text,
+                ',' ORDER BY fr.receiptid
+            ),
+            'NONE'
+        )
+    FROM preftz.fed_receipts fr
+    WHERE preftz.compare_fed_receipt(fr.receiptid) = 'PASS'
+    AND fr.fed_status = 'UPDATE'
+    AND COALESCE(fr.temporary_deposit,'N') = 'N'
+    AND COALESCE(fr.zone_to_zone_transfer,'N') = 'N'
+    ;
+    
+    UPDATE preftz.fed_receipts fr 	
+           SET fed_status = 'DUPLICATE' 	
+    WHERE fr.receiptid IN (
+        SELECT fr.receiptid
+        FROM preftz.fed_receipts fr
+        WHERE preftz.compare_fed_receipt(fr.receiptid) = 'PASS'
+        AND fr.fed_status = 'UPDATE'
+        AND COALESCE(fr.temporary_deposit,'N') = 'N'
+        AND COALESCE(fr.zone_to_zone_transfer,'N') = 'N'    
+    );
+
     --NKM 03/25/2024 	
     --check for correction records (kit_receipts) 	
     UPDATE preftz.fed_receipts fr 	
@@ -726,18 +761,32 @@ BEGIN
      WHERE fr.fed_status IN ('AUDITING','UPDATE') 	
        AND COALESCE(efs.concur_status,'') NOT IN ('','REJECTED'); --NKM 10/03/2022 	
  	
-    --update e214 filing status for all associated un-concurred 214s 	
-    FOR urs IN 	
-        SELECT DISTINCT fr.zone_admission_no 	
-          FROM preftz.fed_receipts fr 	
-               INNER JOIN preftz.e214_filing_statuses efs 	
-                       ON fr.zone_admission_no = efs.zone_admission_no 	
-         WHERE fr.fed_status IN ('AUDITING','UPDATE','ERROR') 	
-           AND COALESCE(efs.concur_status,'') IN ('','REJECTED') --NKM 10/03/2022 	
-           AND COALESCE(efs.e214_status,'') <> '' 	
-    LOOP 	
-        CALL preftz.update_e214_after_create(urs.zone_admission_no); --NKM 10/03/2022 	
-    END LOOP; 	
+  --EG 07/23/2026
+    -- ignore edited receipts and do not call update_e214_after_create 
+    -- if pre-receit was AUTHORIZED and AUTO CONCUR is set to AUTO_LINK_CONCUR
+    IF (SELECT  coalesce(preftz.get_ftz_setting('AUTO CONCUR'),'NO') = 'AUTO_LINK_CONCUR')  	
+    THEN  	
+       CALL preftz.process_fed_receipt_updates();
+    END IF;
+
+  --EG 07/23/2026
+  --normal process
+    IF (SELECT  coalesce(preftz.get_ftz_setting('AUTO CONCUR'),'NO') = 'NO') 
+    THEN  	
+       --update e214 filing status for all associated un-concurred 214s 	
+       FOR urs IN 	
+           SELECT DISTINCT fr.zone_admission_no 	
+             FROM preftz.fed_receipts fr 	
+                  INNER JOIN preftz.e214_filing_statuses efs 	
+                          ON fr.zone_admission_no = efs.zone_admission_no 	
+            WHERE fr.fed_status IN ('AUDITING','UPDATE','ERROR') 	
+              AND COALESCE(efs.concur_status,'') IN ('','REJECTED') --NKM 10/03/2022 	
+              AND COALESCE(efs.e214_status,'') <> '' 	
+       LOOP 	
+           CALL preftz.update_e214_after_create(urs.zone_admission_no); --NKM 10/03/2022 	
+       END LOOP; 	
+    END IF;
+
     --RTJ 11/01/2021 	
  	
     --part_number 	
@@ -2273,8 +2322,6 @@ BEGIN
     INSERT INTO preftz.system_log (procedure_name, log_message) 	
     VALUES ('audit_fed_receipts', 'finished'); 	
 END; 	
-$BODY$; 	
- 	
- 	
- 
+$BODY$;
+
 

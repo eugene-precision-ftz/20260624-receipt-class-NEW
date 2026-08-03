@@ -8,6 +8,7 @@ LANGUAGE 'plpgsql'
 AS $BODY$
 
 --CHANGE LOG:
+-- KK 07/31/2026 Use privileged_date or CURRENT_DATE instead of receipt_date.
 -- KK 02/26/2026 Put IEEPA tariffs back, until CBP has a chance to implement.
 -- KK 02/24/2026 Remove IEEPA tariffs and implement new Section122 tariffs.
 -- KK 12/03/2025 Do nothing if this receipt has no derivative tariffs
@@ -84,7 +85,7 @@ BEGIN
     JOIN derivatives d ON d.additional_tariff_number = rc.harmonized_tariff_schedule_number
         AND d.tariff_type = rc.tariff_type
     LEFT JOIN preftz.derivative_parts_content dpc ON dpc.part_number = r.part_number
-        AND r.receipt_date BETWEEN dpc.start_date AND dpc.end_date
+        AND COALESCE(r.privileged_date, current_date) BETWEEN dpc.start_date AND dpc.end_date
     WHERE r.receiptid = p_receiptid
     GROUP BY dpc.aluminum_percentage, dpc.steel_percentage, dpc.copper_percentage, rc_base.unit_value;
 
@@ -123,7 +124,7 @@ BEGIN
             )
             SELECT rc.harmonized_tariff_schedule_number, rc.special_programs_indicator, 
                     rc.quantity1_rate quantity1, rc.quantity2_rate quantity2, rc.tariff_type, 
-                    COALESCE(r.privileged_date, r.receipt_date, current_date) classification_date,
+                    COALESCE(r.privileged_date, current_date) classification_date,
                     d.is_steel_derivative, d.is_aluminum_derivative, d.is_copper_derivative, COALESCE(d.is_non_content,false) as is_non_content -- MH 9/8/2025 added coalesce false
             FROM preftz.receipts r
             JOIN preftz.receipt_classifications rc ON r.receiptid = rc.receiptid
@@ -250,6 +251,7 @@ BEGIN
     END IF; -- IF Derivatives
 END; 
 $BODY$;
+
 
 
 

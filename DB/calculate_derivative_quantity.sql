@@ -3,6 +3,7 @@ LANGUAGE plpgsql
 AS $$
 
 --CHANGE LOG:
+-- KK 07/31/2026 Use privileged_date or CURRENT_DATE instead of receipt_date.
 -- KK 11/21/2025 fix Base quantity1 calculation
 -- KK 08/20/2025 update quantity1_rate based on derivative percentage
 DECLARE
@@ -47,7 +48,7 @@ BEGIN
             LEFT JOIN derivatives d ON d.additional_tariff_number = rc.harmonized_tariff_schedule_number
                 AND d.tariff_type = rc.tariff_type
             LEFT JOIN preftz.derivative_parts_content dpc ON dpc.part_number = r.part_number
-                AND r.receipt_date BETWEEN dpc.start_date AND dpc.end_date
+                AND COALESCE(r.privileged_date, current_date) BETWEEN dpc.start_date AND dpc.end_date
             WHERE r.receiptid = p_receiptid
                 AND (rc.tariff_type = 'BASE'
                     OR rc.harmonized_tariff_schedule_number = d.additional_tariff_number)
@@ -89,6 +90,7 @@ BEGIN
 
 END; 
 $$;
+
 
 
 

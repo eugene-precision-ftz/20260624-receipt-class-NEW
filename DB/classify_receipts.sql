@@ -8,6 +8,8 @@ CREATE OR REPLACE FUNCTION preftz.classify_receipts(
 AS $BODY$	
 	
 --Change Log:
+-- KK 07/31/2026 do not use receipt_date as privileged_date, use the date we used to classify the receipt.
+-- KK 07/30/2026 Handle EXCLUSION301 - remove any of the older CN Section301 tariffs, but not the new forced labor version
 -- KK 07/21/2026 Use ZTZ privileged_date and base_hts if this was a ZTZ transfer item.
 -- EG 06/11/2026 strip IEEPA from those receipts on an Entry document, use privileged date from receipt if available when classifying receipts
 -- EG 3/10/2026 changes for ztz_additional_tariffs DEV-229
@@ -145,6 +147,10 @@ BEGIN
         ORDER BY r.receiptid, CASE pc.tariff_type WHEN 'BASE' THEN 0 ELSE 9 END
   )
   LOOP	
+    -- KK 07/30/2026 - skip EXCLUSION301 if not China 'CN'
+    IF crs.tariff_type = 'EXCLUSION301' AND crs.country_of_origin <> 'CN' THEN
+        CONTINUE;
+    END IF;
 
    -- EG 06/11/2026
    -- may be overridden by privileged date from transfer item file if additional tariffs are present.
@@ -178,11 +184,13 @@ BEGIN
               v_tariff_number = TRIM(SUBSTR(v_classification,1,10));	
               v_special_program = TRIM(SUBSTR(v_classification,11,2));	
               v_zone_status = crs.zone_status;	
+
+              IF crs.tariff_type = 'BASE' THEN
+                  v_base_hts = crs.harmonized_tariff_schedule_number;
+              END IF;
               	
               --RTJ 11/30/2022	
               IF crs.tariff_type = 'BASE' AND crs.is_transfer_item = FALSE THEN   -- KK 07/21/2026 do not test bounds if ZTZ transfer
-                  v_base_hts = crs.harmonized_tariff_schedule_number; 	
-              	
                   --RTJ 01/17/2023	
                   v_unit_value = crs.unit_value;	
                   v_bounds_hts = preftz.get_bounds_hts(crs.part_number, v_unit_value);	
@@ -349,7 +357,7 @@ BEGIN
                   --RTJ 05/24/2021	
                   IF (v_zone_status = 'P') AND (v_add_hts_count = 0 ) THEN	
                       UPDATE preftz.receipts r	
-                         SET privileged_date = COALESCE(r.privileged_date,r.receipt_date,v_classify_date) --NKM 09/18/2023	
+                         SET privileged_date = COALESCE(r.privileged_date,v_classify_date) -- KK 07/31/2026 do not use receipt_date use the date we classified
                        WHERE r.receiptid = crs.receiptid;	
                   END IF;	
                   --RTJ 05/24/2021	
@@ -417,6 +425,7 @@ BEGIN
 	
 END; 	
 $BODY$;
+
 
 
 
