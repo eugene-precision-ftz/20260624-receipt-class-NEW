@@ -1,13 +1,14 @@
-DROP PROCEDURE IF EXISTS preftz.audit_fed_receipts(); 	
-DROP PROCEDURE IF EXISTS preftz.audit_fed_receipts(INTEGER); 	
-DROP PROCEDURE IF EXISTS preftz.audit_fed_receipts(BOOLEAN); 	
+-- DROP PROCEDURE preftz.audit_fed_receipts(bool);
+
+CREATE OR REPLACE PROCEDURE preftz.audit_fed_receipts(IN p_use_selected_receipts boolean DEFAULT false)
+ LANGUAGE plpgsql
+AS $procedure$ 	
  	
-CREATE OR REPLACE PROCEDURE preftz.audit_fed_receipts(IN p_use_selected_receipts boolean DEFAULT false) 	
- LANGUAGE plpgsql 	
-AS $BODY$ 	
- 	
---Change Log: 	
--- EG 07/23/2026 do not reset e214 status for edited receipts if pre-receit was AUTHORIZED and AUTO CONCUR is set to AUTO_LINK_CONCUR
+--Change Log:
+-- EG 08/11/2026 logic update
+-- EG 08/07/2026 remove using temp_audit_receipts table in the main code
+-- KK 08/05/2026 just in case a previous audit ended in error, change status back to NEW
+-- EG 07/23/2026 do not reset e214 status for edited receipts if pre-receipt was AUTHORIZED and AUTO CONCUR is set to AUTO_LINK_CONCUR
 -- EG 07/16/2026 Compare fed_receipts columns with all other tables to know if anything chaged during front end UPDATE 
 -- KK 07/03/2026 add USMCA special treatments, allow capture of percentage of value is US content.
 -- EG 07/06/2026 some issues fixed
@@ -235,13 +236,18 @@ DECLARE
 BEGIN 	
     INSERT INTO preftz.system_log (procedure_name,log_message) 	
         VALUES ('audit_fed_receipts','started'); 	
+
+ -- KK 08/05/2026 just in case a previous audit ended in error, change status back to NEW
+    UPDATE preftz.fed_receipts fr     
+    SET fed_status = 'NEW'
+    WHERE fr.fed_status IN ('AUDITING','UPDATE','KIT_UPDATE');
  	
 -- EG 4/7/2026 	
     IF (SELECT  coalesce(preftz.get_ftz_setting('AUTO CONCUR'),'NO') = 'AUTO_LINK_CONCUR')  	
     THEN  	
-       CALL preftz.link_receipts_to_conveyances_by_inbond(); 	
-       CALL preftz.assign_zone_admission(); 	
-       CALL preftz.pre_receipts_filing(); 	
+        CALL preftz.link_receipts_to_conveyances_by_inbond(); 	
+        CALL preftz.assign_zone_admission(); 	
+        --CALL preftz.pre_receipts_filing(); 	
     END IF; 	
 -- EG 4/7/2026 	
  	
@@ -315,7 +321,7 @@ BEGIN
       FROM temp_audit_receipts tar 	
       WHERE fe.receiptid = tar.receiptid; 	
  	
-    COMMIT; 	
+    --COMMIT; 	
  	
     --NKM 12/16/2020 Consolidated and expanded cleanup varchar fields 	
     --Capitalize, remove spaces, and/or set '' to NULL as appropriate 	
@@ -431,7 +437,7 @@ BEGIN
     ) pd 	
     WHERE pd.receiptid = fr.receiptid; 	
  	
-    COMMIT; 	
+    --COMMIT; 	
  	
     UPDATE preftz.fed_receipts 	
       SET temporary_deposit = NULL 	
@@ -1273,8 +1279,9 @@ BEGIN
            AND LEFT(REPLACE(acr.case_number,'-',''),7) = crs.case_prefix 	
            AND CURRENT_DATE >= acr.rate_effective_date 	
            AND CURRENT_DATE <= acr.rate_end_date  --RTJ 04/03/2021 	
-           AND acr.case_status = 'ACTIVE' 	
-           AND fr.receiptid IN (SELECT receiptid FROM temp_audit_receipts); --NO 12/04/2025 	
+           AND acr.case_status = 'ACTIVE'
+           AND fr.fed_status IN ('AUDITING','UPDATE','KIT_UPDATE'); -- EG 08/07/2026
+           --AND fr.receiptid IN (SELECT receiptid FROM temp_audit_receipts); --NO 12/04/2025 	
  	
  	
         UPDATE preftz.fed_receipts fr 	
@@ -1286,7 +1293,8 @@ BEGIN
            AND CURRENT_DATE >= acr.rate_effective_date 	
            AND CURRENT_DATE <= acr.rate_end_date  --RTJ 04/03/2021 	
            AND acr.case_status = 'ACTIVE' 	
-           AND fr.receiptid IN (SELECT receiptid FROM temp_audit_receipts); --NO 12/04/2025 	
+           AND fr.fed_status IN ('AUDITING','UPDATE','KIT_UPDATE'); -- EG 08/07/2026
+           --AND fr.receiptid IN (SELECT receiptid FROM temp_audit_receipts); --NO 12/04/2025 	
  	
     END LOOP; 	
  	
@@ -1915,7 +1923,7 @@ BEGIN
                 OR COALESCE(fr.zone_admission_no,'') <> COALESCE(r.zone_admission_no,'') 	
                 OR COALESCE(fr.inbond_number,'') <> COALESCE(fc.inbond_number,c.inbond_number,'')); --NKM 09/01/2021 	
  	
-    COMMIT; 	
+    --COMMIT; 	
  	
     --handle conveyance linking for AUDITING record and UPDATE records with null zone_admission_no 	
     --RTJ 03/31/2021 if AUTOMATIC linking is selected assign all fed receipts 	
@@ -2312,9 +2320,13 @@ BEGIN
 -- EG 4/7/2026 	
     IF (SELECT  coalesce(preftz.get_ftz_setting('AUTO CONCUR'),'NO') = 'AUTO_LINK_CONCUR')  	
     THEN  	
-       CALL preftz.link_receipts_to_conveyances_by_inbond(); 	
-       CALL preftz.assign_zone_admission(); 	
-       CALL preftz.pre_receipts_filing(); 	
+        CALL preftz.link_receipts_to_conveyances_by_inbond(); 	
+        CALL preftz.assign_zone_admission(); 	
+        
+        -- EG 08/11/2026
+        CALL preftz.submit_job_request('preftz.process_auto_concur',NULL,'MED');
+
+        --CALL preftz.pre_receipts_filing(); 	
     END IF; 	
 -- EG 4/7/2026 	
  	
@@ -2322,6 +2334,6 @@ BEGIN
     INSERT INTO preftz.system_log (procedure_name, log_message) 	
     VALUES ('audit_fed_receipts', 'finished'); 	
 END; 	
-$BODY$;
-
+$procedure$
+;
 

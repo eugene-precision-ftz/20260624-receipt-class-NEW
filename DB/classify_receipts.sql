@@ -8,6 +8,8 @@ CREATE OR REPLACE FUNCTION preftz.classify_receipts(
 AS $BODY$	
 	
 --Change Log:
+-- KK 08/01/2026 Change the way we handle privileged_date so that it reflects e214 filing; Also some simple performance refactoring.
+-- EG 07/31/2026 added some code for v_add_hts_count
 -- KK 07/31/2026 do not use receipt_date as privileged_date, use the date we used to classify the receipt.
 -- KK 07/30/2026 Handle EXCLUSION301 - remove any of the older CN Section301 tariffs, but not the new forced labor version
 -- KK 07/21/2026 Use ZTZ privileged_date and base_hts if this was a ZTZ transfer item.
@@ -66,7 +68,6 @@ DECLARE
   derivative_rs       RECORD;  -- KK 04/17/2025	
   v_skip_added_tariffs   BOOLEAN DEFAULT false;  -- KK 05/06/2025	
 
-  v_add_hts_count     INTEGER; -- EG 3/10/2026
   v_classify_date     DATE;    -- EG 3/10/2026 to potentially override classify date with privileged date provided in transfer item file
   
 BEGIN	
@@ -78,6 +79,8 @@ BEGIN
   INTO v_skip_added_tariffs	
   FROM preftz.e214_filing_statuses	
   WHERE zone_admission_no = p_admission_number;	
+
+  --perform  preftz.classify_receipts_v2(p_admission_number,null,null,true);
 	
   v_result = 'PASS';	
 	
@@ -128,9 +131,10 @@ BEGIN
             rcs.country_of_cast, rcs.primary_country_of_smelt, rcs.secondary_country_of_smelt, --NKM 04/21/2023	
             q.harmonized_tariff_schedule_number override_tariff,  --RTJ 11/30/2022	
             preftz.get_receipt_value(r.receiptid) unit_value  --RTJ 01/20/2023	
-            , COALESCE(ztzd.privileged_date, r.privileged_date) AS privileged_date  -- KK 07/21/2026
+            , ztzd.privileged_date AS ztz_privileged_date, efs.classification_date AS e214_classification_date  -- KK 08/01/2026
             , ztzd.ztz_base_tariffs IS NOT NULL AS is_transfer_item  -- KK 07/21/2026
         FROM preftz.receipts r 	
+        INNER JOIN preftz.e214_filing_statuses efs ON efs.zone_admission_no = r.zone_admission_no
         INNER JOIN preftz.parts p ON r.part_number = p.part_number	
         INNER JOIN preftz.part_classifications pc ON p.part_number = pc.part_number	
         INNER JOIN prehts.tariff_types tt ON pc.tariff_type = tt.tariff_type	
@@ -156,20 +160,24 @@ BEGIN
    -- may be overridden by privileged date from transfer item file if additional tariffs are present.
       
       IF p_classify_date IS NULL THEN
-          v_classify_date := COALESCE(crs.privileged_date, CURRENT_DATE);
+          v_classify_date := COALESCE(crs.ztz_privileged_date, crs.e214_classification_date, CURRENT_DATE);  -- KK 08/01/2026
       ELSE
           v_classify_date := p_classify_date;
       END IF;
-    
+
 
       IF crs.zone_status <> 'D'	
       THEN	
           receipt_result = 'PASS';	
+
+          RAISE NOTICE 'validate_classification for HTS: %, special_programs_indicator: %, country_of_origin: %, classify_date: %'
+          , crs.harmonized_tariff_schedule_number, crs.special_programs_indicator, crs.country_of_origin, v_classify_date;
           	
           SELECT preftz.validate_classification 	
                 (crs.harmonized_tariff_schedule_number, crs.special_programs_indicator, crs.country_of_origin, 	
                  v_classify_date)	
             INTO v_classification;	
+
 	
           IF v_classification = 'FAIL' THEN	
               v_result = 'FAIL';	
@@ -188,7 +196,7 @@ BEGIN
               IF crs.tariff_type = 'BASE' THEN
                   v_base_hts = crs.harmonized_tariff_schedule_number;
               END IF;
-              	
+
               --RTJ 11/30/2022	
               IF crs.tariff_type = 'BASE' AND crs.is_transfer_item = FALSE THEN   -- KK 07/21/2026 do not test bounds if ZTZ transfer
                   --RTJ 01/17/2023	
@@ -355,21 +363,17 @@ BEGIN
                   END IF;	
                   	
                   --RTJ 05/24/2021	
-                  IF (v_zone_status = 'P') AND (v_add_hts_count = 0 ) THEN	
+                  IF (v_zone_status = 'P') THEN	
                       UPDATE preftz.receipts r	
-                         SET privileged_date = COALESCE(r.privileged_date,v_classify_date) -- KK 07/31/2026 do not use receipt_date use the date we classified
+                         SET privileged_date = v_classify_date -- KK 08/01/2026 always update to classification date
                        WHERE r.receiptid = crs.receiptid;	
                   END IF;	
                   --RTJ 05/24/2021	
                   
                   
                   -- EG 3/10/2026
-                  IF (v_zone_status = 'P') AND (v_add_hts_count > 0)
+                  IF (v_zone_status = 'P') AND (crs.ztz_privileged_date IS NOT NULL)
                   THEN	
-                      UPDATE preftz.receipts r	
-                         SET privileged_date = v_classify_date --actually a privileged date provided in transfer item file
-                      WHERE r.receiptid = crs.receiptid;	
-                      
                       RAISE NOTICE '------------------------------------------------preftz.receipts was updated with v_classify_date from transfer_ztz_archive:%,  %', v_classify_date, crs.receiptid; 
                   END IF;	
                   -- EG 3/10/2026
@@ -377,16 +381,16 @@ BEGIN
                   -- KK 08/20/2025 update quantity1_rate based on derivative percentage
                   -- This is not very efficient, need to refactor calls to these procs after hot-fix
                   -- order is IMPORTANT! calculate_derivative_quantity needs to be called before duty calculations
-                  IF LENGTH(v_added_tariffs) > 0 THEN	
-                      CALL preftz.calculate_derivative_quantity(crs.receiptid); 	
-                  END IF;
+                   IF LENGTH(v_added_tariffs) > 0 THEN	
+                       CALL preftz.calculate_derivative_quantity(crs.receiptid); 	
+                   END IF;
 
-                   CALL preftz.calculate_duty_liability(crs.receiptid);  --RTJ 07/12/2021	
+                    CALL preftz.calculate_duty_liability(crs.receiptid);  --RTJ 07/12/2021	
 	
-                  -- If Derivative of steel or aluminum recalculate BASE and derivative tariffs	
-                  IF LENGTH(v_added_tariffs) > 0 THEN	
-                      CALL preftz.calculate_derivative_duty_liability(crs.receiptid); 	
-                  END IF;	
+                   -- If Derivative of steel or aluminum recalculate BASE and derivative tariffs	
+                   IF LENGTH(v_added_tariffs) > 0 THEN	
+                       CALL preftz.calculate_derivative_duty_liability(crs.receiptid); 	
+                   END IF;	
               	
               END IF;  --receipt result	
               	
@@ -425,9 +429,5 @@ BEGIN
 	
 END; 	
 $BODY$;
-
-
-
-
 
 
