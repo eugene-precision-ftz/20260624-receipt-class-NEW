@@ -93,6 +93,8 @@ BEGIN
         override_tariff varchar(10) NULL,
         unit_value float8 NULL,
         privileged_date date NULL,
+        classification_date date NULL,
+        is_transfer_item BOOLEAN DEFAULT FALSE, 
         new_zone_status varchar(1) NULL,
 
         steel_poured_in_us          BOOLEAN NULL,
@@ -210,6 +212,7 @@ BEGIN
     ,override_tariff
     ,unit_value
     ,privileged_date
+    ,classification_date
    )
     SELECT 
      r.receiptid
@@ -236,8 +239,11 @@ BEGIN
     ,rcs.secondary_country_of_smelt
     ,q.harmonized_tariff_schedule_number override_tariff
     ,preftz.get_receipt_value(r.receiptid) unit_value
-    ,COALESCE(r.privileged_date, r.receipt_date, CURRENT_DATE)
+    ,CURRENT_DATE
+    ,efs.classification_date 
                     FROM preftz.receipts r 	
+                    INNER JOIN preftz.e214_filing_statuses efs 
+                             ON efs.zone_admission_no = r.zone_admission_no                    
                      INNER JOIN preftz.parts p 	
                              ON r.part_number = p.part_number	
                      INNER JOIN preftz.part_classifications pc	
@@ -263,14 +269,20 @@ BEGIN
       WHERE receiptid <> p_receiptid;
     end if;
 
+
    -- may be overridden by privileged date from transfer item file if additional tariffs are present.
 
+      update tmp_receipt_classification_data
+      set privileged_date = COALESCE(classification_date, CURRENT_DATE);  
 
       IF p_classify_date IS NOT NULL THEN
         update tmp_receipt_classification_data
         set privileged_date = p_classify_date
         ;
       END IF;
+
+
+
 
 -----------------------------------------------------------------------------------------------------------   
 
@@ -331,7 +343,9 @@ BEGIN
                            );
 
                           UPDATE tmp_receipt_classification_data
-                          SET privileged_date = v_privileged_date
+                          SET 
+                           privileged_date = v_privileged_date
+                          ,is_transfer_item = TRUE
                           where receiptid = crs.receiptid;
                     END IF;
 

@@ -87,6 +87,7 @@ BEGIN
                 ,trc.unit_value
                 ,trc.privileged_date
                 ,trc.override_hts
+                ,trc.is_transfer_item
                  FROM tmp_receipt_classification_data trc
                  --where receiptid in (210455,210454,210456)
                 -- ORDER BY trc.receiptid,trc.id
@@ -97,11 +98,19 @@ BEGIN
 --RAISE NOTICE 'XXXXXXXXXXXXXXXXXXXX----------------------------------------- crs.tariff_type: %  ,  crs.receiptid: % '
 --, crs.tariff_type, crs.receiptid ;
 
+    -- skip EXCLUSION301 if not China 'CN'
+    IF crs.tariff_type = 'EXCLUSION301' AND crs.country_of_origin <> 'CN' THEN
+        CONTINUE;
+    END IF;
+
     
 
       IF crs.zone_status <> 'D'	
       THEN	
           receipt_result = 'PASS';	
+
+          RAISE NOTICE 'validate_classification for HTS: %, special_programs_indicator: %, country_of_origin: %, classify_date: %'
+          , crs.harmonized_tariff_schedule_number, crs.special_programs_indicator, crs.country_of_origin, crs.privileged_date;
           	
           SELECT preftz.validate_classification 	
                 (crs.harmonized_tariff_schedule_number, crs.special_programs_indicator, crs.country_of_origin, 	
@@ -122,12 +131,17 @@ BEGIN
               v_special_program = TRIM(SUBSTR(v_classification,11,2));	
               v_zone_status = crs.zone_status;	
 
+              IF crs.tariff_type = 'BASE' THEN
+                  v_base_hts = crs.harmonized_tariff_schedule_number;
+              END IF;
+
 --RAISE NOTICE '11111111111111----------------------------------------- crs.tariff_type: %  ,  crs.receiptid: % '
 --, crs.tariff_type, crs.receiptid ;
 
               	
               --RTJ 11/30/2022	
-              IF crs.tariff_type = 'BASE' THEN 	
+              --IF crs.tariff_type = 'BASE' THEN 	
+              IF crs.tariff_type = 'BASE' AND crs.is_transfer_item = FALSE THEN   -- KK 07/21/2026 do not test bounds if ZTZ transfer
                   v_base_hts = crs.harmonized_tariff_schedule_number; 	
               	
                   --RTJ 01/17/2023	

@@ -12,6 +12,7 @@ RETURNS preftz.t_added_tariff[]
 AS $$
 
 --Change Log:
+-- KK 07/22/2026 CSMS # 69302472 - new Section301 Brazil
 -- KK 06/19/2026 Do not allow two Section122 tariffs to be applied.
 -- KK 04/06/2026 CSMS # 68253075 - GUIDANCE: Section 232 Duties on Imports of Aluminum, Steel, and Copper
 -- KK 02/26/2026 Put IEEPA tariffs back, until CBP has a chance to implement.
@@ -207,6 +208,31 @@ BEGIN
 				SELECT added_tariff FROM all_others
 			)
 			SELECT ARRAY_AGG(added_tariff) FROM new_added_tariffs INTO v_filtered_tariffs;
+		END IF;
+
+        -- KK 07/22/2026 Remove Section301 if Section301 exclusion is used
+        IF EXISTS (
+            SELECT 1 FROM UNNEST(v_filtered_tariffs) as a
+			WHERE a.tariff_number IN(
+				SELECT additional_tariff_number FROM preftz.additional_tariff_tags 
+				WHERE tag_name = 'section301'
+			)
+        ) AND EXISTS (
+            SELECT 1 FROM UNNEST(v_filtered_tariffs) as a
+			WHERE a.tariff_number IN(
+				SELECT additional_tariff_number FROM preftz.additional_tariff_tags 
+				WHERE tag_name = 'section301_exclusion'
+			)
+        )
+        THEN
+            RAISE NOTICE '%', 'removing section301 tariff because section301_exclusion exists';
+            SELECT ARRAY_AGG((a.tariff_number, a.assigned_status, a.tariff_type)::preftz.t_added_tariff)
+            INTO v_filtered_tariffs
+			FROM UNNEST(v_filtered_tariffs) as a
+			WHERE a.tariff_number NOT IN(
+                SELECT additional_tariff_number FROM preftz.additional_tariff_tags 
+				WHERE tag_name = 'section301'
+			);
 		END IF;
 
         RAISE NOTICE 'after filter: %', v_filtered_tariffs;

@@ -1,3 +1,29 @@
+--!!! 
+when pre-receipts deleted need to deleted corresponding id from receipt classification 
+
+
+
+1
+need ZTZ base tarif logic in new classify_receipts_v3 function.
+
+1  !!! update delete receipt process
+
+2
+Hey, just to let you know.... the only change I made in logic was to function filter_additional_tariffs_struc - I have checked it into mothership - lines 213 - 236
+
+
+ am going to checkin my changes to classify_receipts and get_added_tariffs_struc that I did 
+ for EXCLUSION301 handling (LazyBoy). In addition, I will make the change we discussed this morning 
+ by removing the receipt_date from the Coalesce when writing privileged_date 
+ - this might prevent what we saw in TRF this morning, however there will be 
+ a lot more changes needed to implement setting the privileged_date to the e214 filed date (bigger project).
+
+--test
+
+filter_additional_tariffs_struc_v2
+classify
+both calculate_deriv
+
 --new
 CREATE OR REPLACE FUNCTION preftz.create_receipt_classifications --generate renamed to
 CREATE OR REPLACE FUNCTION preftz.calculate_receipt_classifications --generate

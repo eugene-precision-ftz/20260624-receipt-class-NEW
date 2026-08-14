@@ -10,6 +10,7 @@ RETURNS preftz.t_added_tariff[]
 AS $$
 
 --Change Log:
+-- KK 07/30/2026 Handle EXCLUSION301 - remove any of the older CN Section301 tariffs, but not the new forced labor version
 -- KK 02/26/2026 Put IEEPA tariffs back, until CBP has a chance to implement.
 -- KK 02/24/2026 Remove IEEPA tariffs and implement new Section122 tariffs.
 -- KK 01/14/2026 Only add the reciprocal to those that have exclusions for ALL Section232 tariffs.
@@ -25,7 +26,7 @@ DECLARE
     v_tariffs                    preftz.t_added_tariff[] DEFAULT '{}'::preftz.t_added_tariff[];
     v_chapter98_override         VARCHAR(10);
     v_used_for_production_or_repair  BOOLEAN DEFAULT FALSE;
-    v_exclusion_tariffs           VARCHAR(10)[] DEFAULT '{}'::VARCHAR(10)[];
+    v_exlusion_tariffs           VARCHAR(10)[] DEFAULT '{}'::VARCHAR(10)[];
     v_all_232_excluded           BOOLEAN DEFAULT FALSE;
   
 BEGIN
@@ -45,7 +46,7 @@ BEGIN
 */    
 
          SELECT v232_exclusion, v301_exclusion, chapter98_override, used_for_production_or_repair, exclusion_tariffs
-         INTO v_232_exclusion, v_301_exclusion, v_chapter98_override, v_used_for_production_or_repair, v_exclusion_tariffs
+         INTO v_232_exclusion, v_301_exclusion, v_chapter98_override, v_used_for_production_or_repair, v_exlusion_tariffs
             FROM tmp_receipt_classification_data trcd
             WHERE trcd.part_number = p_part_number
          GROUP BY v232_exclusion, v301_exclusion, chapter98_override, used_for_production_or_repair, exclusion_tariffs;
@@ -68,12 +69,6 @@ BEGIN
             ELSE
                 RAISE NOTICE '232 Exclusion: %, excluded %', v_232_exclusion, trs.additional_tariff_number;
             END IF;
-        ELSIF trs.tariff_type = 'SECTION301' THEN
-            IF COALESCE(v_301_exclusion,'') = '' THEN
-                v_tariffs = v_tariffs || (trs.additional_tariff_number, trs.assigned_status, trs.tariff_type)::preftz.t_added_tariff;
-            ELSE
-                RAISE NOTICE '301 Exclusion: %, excluded %', v_301_exclusion, trs.additional_tariff_number;
-            END IF;
         ELSIF trs.tariff_type = 'ADDITIONAL' THEN
             -- This effectively DISABLES adding 99030133 from additional_tariffs table.
             -- We could remove 99030133 from additional_tariffs, but will keep for now until this logic get's deployed everywhere.
@@ -85,8 +80,29 @@ BEGIN
         END IF;
     END LOOP;
 
+    -- KK 07/30/2026 Handle EXCLUSION301 - remove any of the older CN Section301 tariffs, but not the new forced labor version
+    IF COALESCE(v_301_exclusion,'') <> '' AND p_country = 'CN' THEN
+        IF EXISTS (
+            SELECT 1 FROM UNNEST(v_tariffs) as a
+            WHERE a.tariff_number IN(
+                SELECT additional_tariff_number FROM preftz.additional_tariff_tags
+                WHERE tag_name = 'exclusion301_exclude'
+            )
+        )
+        THEN
+            RAISE NOTICE '%', 'removing section301 tariff because EXCLUSION301 exists in part_classifications';
+            SELECT ARRAY_AGG((a.tariff_number, a.assigned_status, a.tariff_type)::preftz.t_added_tariff)
+            INTO v_tariffs
+			FROM UNNEST(v_tariffs) as a
+			WHERE a.tariff_number NOT IN(
+                SELECT additional_tariff_number FROM preftz.additional_tariff_tags 
+				WHERE tag_name = 'exclusion301_exclude'
+			);
+        END IF;
+    END IF;
+
     -- Replace any tariffs with their exclusion tariff if necessary (preftz.additional_tariff_replacements)
-    IF CARDINALITY(v_exclusion_tariffs) > 0 THEN
+    IF CARDINALITY(v_exlusion_tariffs) > 0 THEN
         FOR trs IN
             WITH added AS (
                 SELECT UNNEST(v_tariffs) AS tariff_struc
@@ -94,7 +110,7 @@ BEGIN
                 SELECT atr.tariff_number, atr.assigned_status, atr.tariff_type, 
                     UNNEST(atr.replaceable_tariffs) as tariff_to_replace
                 FROM preftz.additional_tariff_replacements atr
-                WHERE atr.tariff_number = ANY(v_exclusion_tariffs)
+                WHERE atr.tariff_number = ANY(v_exlusion_tariffs)
                     AND p_date BETWEEN atr.start_date AND atr.end_date
             )
             SELECT r.tariff_number, r.assigned_status, r.tariff_type, a.tariff_struc
@@ -108,7 +124,7 @@ BEGIN
     END IF;
 
     -- If using replacement tariff exclusions, then check if all SECTION232 are excluded.
-    IF CARDINALITY(v_exclusion_tariffs) > 0 THEN
+    IF CARDINALITY(v_exlusion_tariffs) > 0 THEN
         SELECT NOT EXISTS (
             WITH added AS (
                 SELECT UNNEST(v_tariffs) AS tariff_struc
@@ -137,7 +153,7 @@ BEGIN
                 AND a.end_date >= DATE_TRUNC('day',p_date)
         LOOP
             RAISE NOTICE 'add section122 % because of Section232 Exclusion % or Exclusion tariffs %', 
-                trs.additional_tariff_number, v_232_exclusion, v_exclusion_tariffs;
+                trs.additional_tariff_number, v_232_exclusion, v_exlusion_tariffs;
             v_tariffs = v_tariffs || (trs.additional_tariff_number, trs.assigned_status, trs.tariff_type)::preftz.t_added_tariff;
         END LOOP;
     END IF;
@@ -158,7 +174,7 @@ BEGIN
                 AND a.end_date >= DATE_TRUNC('day',p_date)
         LOOP
             RAISE NOTICE 'add reciprocal % because of Section232 Exclusion % or Exclusion tariffs %', 
-                trs.additional_tariff_number, v_232_exclusion, v_exclusion_tariffs;
+                trs.additional_tariff_number, v_232_exclusion, v_exlusion_tariffs;
             v_tariffs = v_tariffs || (trs.additional_tariff_number, trs.assigned_status, trs.tariff_type)::preftz.t_added_tariff;
         END LOOP;
     END IF;
@@ -171,5 +187,7 @@ BEGIN
 
 END; $$
 LANGUAGE plpgsql;
+
+
 
 
